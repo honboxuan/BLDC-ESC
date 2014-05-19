@@ -25,7 +25,19 @@ int main(void) {
 	
 	
 	
-	DDRB |= (1 << PB7)|(1 << PB6); //Debugging
+	//DDRB |= (1 << PB7)|(1 << PB6); //Debugging
+	
+	
+	
+	
+	
+	
+	//PWM Control Input Capture Timer
+	//TCCR1B |= (1 << ICES1)|(1 << CS10); //Rising edge trigger, no prescaler
+	//TIMSK1 |= (1 << ICIE1); //Enable Input Capture Interrupt
+	
+	
+	
 	
 	
 	
@@ -38,28 +50,57 @@ int main(void) {
 	//TCCR0B |= (1 << CS01); //1/8 prescaler
 	//TCCR0B |= (1 << CS01)|(1 << CS00); //1/64 prescaler
 	
-	
 	//Watchdog Timer
 	WDTCSR |= (1 << WDIE); //Interrupt mode
-	
-	
 	
 	//Direction Change Interrupt
 	EICRA |= (1 << ISC10); //Any logical change
 	EIMSK |= (1 << INT1); //Enable INT1
 	
-	
 	//Power Stage Controller Configuration
 	PLLCSR |= (1 << PLLF)|(1 << PLLE); //Enable PLL, 64MHz
 	//PLLCSR |= (1 << PLLE); //Enable PLL, 32MHz
 	
+	
+	
+	
+	
+	
+	
+	
+	
 	//Power Stage Controller 0
+	/*
+	//Original
 	DDRD |= (1 << PD0);
 	PSOC0 |= (1 << POEN0A); //PSC0OUTA enable
 	OCR0SA = 0; //Deadtime
 	OCR0RB = TOP;
 	PCNF0 = (1 << POP0)|(1 << PCLKSEL0);
+	*/
 	//PCNF0 = (1 << POP0);
+	
+	
+	
+	
+	
+	//Power Stage Controller 0
+	//Testing using PSCOUT01 to free PD0 (using PB7)
+	DDRB |= (1 << PB7);
+	PSOC0 |= (1 << POEN0B); //PSC0OUTB enable
+	OCR0SA = 0;
+	OCR0RA = 0; //Deadtime
+	//OCR0SB = 0; //Controls duty cycle (TOP-desired)
+	OCR0RB = TOP;
+	PCNF0 = (1 << POP0)|(1 << PCLKSEL0);
+	//PCNF0 = (1 << POP0);
+	
+	
+	
+	
+	
+	
+	
 	
 	//Power Stage Controller 1
 	DDRC |= (1 << PC0);
