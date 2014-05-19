@@ -15,7 +15,6 @@
 
 extern "C" {
 	void Initialise(void);
-	//void AllOff(void);
 	void Loop(void);
 }
 
@@ -45,12 +44,9 @@ int main(void) {
 	
 	
 	
-	//End of cycle interrupt
-	//PIM1 |= (1 << PEOP1);
-	
-	
-	
-	
+	//Direction Change Interrupt
+	EICRA |= (1 << ISC10); //Any logical change
+	EIMSK |= (1 << INT1); //Enable INT1
 	
 	
 	//Power Stage Controller Configuration

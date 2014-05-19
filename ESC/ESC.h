@@ -50,11 +50,10 @@ Speed report via SPI/I2C
 #define COMPARATOR_STATE	0
 #define RUNNING_MODE		1
 #define COMMUTATE_FLAG		2
+#define DIRECTION			3
 
 #define TOP			1024
 #define START_DUTY	1024
 #define IDLE_DUTY	256
-
-#define DIRECTION	0
 
 #endif /* ESC_H_ */
