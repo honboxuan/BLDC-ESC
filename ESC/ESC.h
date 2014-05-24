@@ -53,7 +53,8 @@ Speed report via SPI/I2C
 #define DIRECTION			3
 
 #define TOP			1024
-#define START_DUTY	1023
+#define START_DUTY	1024
 #define IDLE_DUTY	256
+#define TEST_DUTY	128
 
 #endif /* ESC_H_ */

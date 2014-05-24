@@ -32,13 +32,19 @@ int main(void) {
 	
 	
 	
-	//PWM Control Input Capture Timer
+	//Control via PWM Input Capture Timer
 	//TCCR1B |= (1 << ICES1)|(1 << CS10); //Rising edge trigger, no prescaler
 	//TIMSK1 |= (1 << ICIE1); //Enable Input Capture Interrupt
 	
 	
 	
+	//Control via SPI
+	DDRD |= (1 << PD2); //MISO
+	DDRD &= ~((1 << PD0)|(1 << PD3)|(1 << PD4)); //SS, MOSI, SCK
+	MCUCR |= (1 << SPIPS); //Redirect SPI to alternate pins
+	SPCR |= (1 << SPIE)|(1 << SPE); //Interrupt enable, SPI enable
 	
+	SPDR = 204; //11001100
 	
 	
 	

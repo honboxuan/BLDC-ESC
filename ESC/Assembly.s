@@ -25,6 +25,7 @@
 #define	SAMPLE_CNT			r22
 #define	DUTY_H				r23
 #define	DUTY_L				r24
+#define ISR_RMP				r25
 
 .global Initialise
 .global Loop
@@ -32,24 +33,36 @@
 .global	WDT_vect
 .global INT1_vect
 //.global TIMER1_CAPT_vect
+.global SPI_STC_vect
 
 //Initialisation
 Initialise:
 	ldi		RMP, 1
 	mov		ONE, RMP
+	
 	clr		FLAGS
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
+	
 	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
+	
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
+	
 	clr		DUTY_H
 	clr		DUTY_L
+
+	sbr		FLAGS, (1 << DIRECTION)
+	sbis	_SFR_IO_ADDR(PINB), PB2
+	cbr		FLAGS, (1 << DIRECTION)
+
 	sei
+/*
 AllOff:
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
 	sts		LOW_A, ZERO
 	sts		LOW_B, ZERO
 	sts		LOW_C, ZERO
+*/
 	ret
 
 //Commutation
@@ -295,16 +308,12 @@ StartupMode:
 	;sbrs	COMM_CNT, 6 ; 64
 	;sbrs	COMM_CNT, 7 ; 128
 	rjmp	Commutate
-	
-	
-
+TransitionMode:
 	//Testing using PSCOUT01 to free PD0 (using PB7)
 	ldi		DUTY_H, ((TOP-IDLE_DUTY) >> 8)
 	ldi		DUTY_L, ((TOP-IDLE_DUTY) & 255)
 	sts		OCR0SBH, DUTY_H
 	sts		OCR0SBL, DUTY_L
-
-
 
 	; Idle duty cycle
 	ldi		DUTY_H, (IDLE_DUTY >> 8)
@@ -340,7 +349,7 @@ INT1_vect:
 	cbr		FLAGS, (1 << DIRECTION)
 	reti
 
-//PWM Control Input Capture
+//Control via PWM Input Capture Timer
 /*
 TIMER1_CAPT_vect:
 	
@@ -353,3 +362,26 @@ TIMER1_CAPT_vect:
 
 	reti
 */
+
+//Control via SPI
+SPI_STC_vect:
+	lds		ISR_RMP, SPDR
+	cpi		ISR_RMP, 129
+	brne	SPI_STC_vect_end
+
+	ldi		DUTY_H, ((TOP-TEST_DUTY) >> 8)
+	ldi		DUTY_L, ((TOP-TEST_DUTY) & 255)
+	sts		OCR0SBH, DUTY_H
+	sts		OCR0SBL, DUTY_L
+
+	ldi		DUTY_H, (TEST_DUTY >> 8)
+	ldi		DUTY_L, (TEST_DUTY & 255)
+	sts		OCR1RAH, DUTY_H
+	sts		OCR1RAL, DUTY_L
+	sts		OCR2RAH, DUTY_H
+	sts		OCR2RAL, DUTY_L
+SPI_STC_vect_end:
+	ldi		ISR_RMP, 204
+	sts		SPDR, ISR_RMP
+
+	reti
