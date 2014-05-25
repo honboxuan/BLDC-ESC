@@ -58,7 +58,6 @@ Speed report via SPI/I2C
 #define TOP			1024
 #define START_DUTY	1024
 #define IDLE_DUTY	256
-#define TEST_DUTY	128
 
 //Control Settings
 #define CTRL_DELIM	222 //0xDE

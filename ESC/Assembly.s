@@ -64,6 +64,14 @@ AllOff:
 Commutate:
 	wdr
 	sts		TCNT0, ZERO
+	
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
+	sts		OCR1RAH, DUTY_H
+	sts		OCR1RAL, DUTY_L
+	sts		OCR2RAH, DUTY_H
+	sts		OCR2RAL, DUTY_L
+	
 	ijmp
 Phase1: ; B,A
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
@@ -193,13 +201,14 @@ TimeoutChecker:
 	ldi		DUTY_L, (START_DUTY & 255)
 	ldi		COMP_DUTY_H, ((TOP-START_DUTY) >> 8)
 	ldi		COMP_DUTY_L, ((TOP-START_DUTY) & 255)
+	/*
 	sts		OCR0SBH, COMP_DUTY_H
 	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
-
+	*/
 
 
 
@@ -306,13 +315,14 @@ TransitionMode:
 	ldi		DUTY_L, (IDLE_DUTY & 255)
 	ldi		COMP_DUTY_H, ((TOP-IDLE_DUTY) >> 8)
 	ldi		COMP_DUTY_L, ((TOP-IDLE_DUTY) & 255)
+	/*
 	sts		OCR0SBH, COMP_DUTY_H
 	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
-
+	*/
 	sbr		FLAGS, (1 << RUNNING_MODE)
 	rjmp	RunningMode
 
@@ -338,7 +348,11 @@ INT1_vect:
 	reti
 
 //Control via SPI
+//Might be too slow
 SPI_STC_vect:
+	sbrs	FLAGS, RUNNING_MODE
+	reti
+
 	lds		ISR_RMP, SPDR
 	in		SREG_TEMP, _SFR_IO_ADDR(SREG) ; Not always necessary
 
@@ -353,6 +367,11 @@ RXDuty:
 	sbrc	FLAGS, CTRL_DUTY_BYTE
 	rjmp	RXDutyLow
 RXDutyHigh:
+
+	; Testing
+	cpi		ISR_RMP, 4
+	brsh	RXDutyError
+
 	mov		DUTY_H, ISR_RMP
 	sbr		FLAGS, (1 << CTRL_DUTY_BYTE)
 	rjmp	SPI_STC_vect_end
@@ -366,16 +385,26 @@ DutyCycleUpdate:
 	sub		COMP_DUTY_L, DUTY_L
 	sbc		COMP_DUTY_H, DUTY_H
 	
+	/*
 	sts		OCR0SBH, COMP_DUTY_H
 	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
+	*/
 SPI_STC_vect_end:
 	; Next byte for SPI master (speed)
 	;ldi		ISR_RMP, 204
 	sts		SPDR, ISR_RMP
+
+	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
+	reti
+
+; Testing
+RXDutyError:
+	cbr		FLAGS, (1 << CTRL_DELIM_RXED)
+	cbr		FLAGS, (1 << CTRL_DUTY_BYTE)
 
 	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
 	reti
