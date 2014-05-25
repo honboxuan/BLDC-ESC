@@ -51,10 +51,16 @@ Speed report via SPI/I2C
 #define RUNNING_MODE		1
 #define COMMUTATE_FLAG		2
 #define DIRECTION			3
+#define CTRL_DELIM_RXED		4
+#define CTRL_DUTY_BYTE		5
 
+//PWM Settings
 #define TOP			1024
 #define START_DUTY	1024
 #define IDLE_DUTY	256
 #define TEST_DUTY	128
+
+//Control Settings
+#define CTRL_DELIM	222 //0xDE
 
 #endif /* ESC_H_ */

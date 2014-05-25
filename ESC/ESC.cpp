@@ -44,8 +44,6 @@ int main(void) {
 	MCUCR |= (1 << SPIPS); //Redirect SPI to alternate pins
 	SPCR |= (1 << SPIE)|(1 << SPE); //Interrupt enable, SPI enable
 	
-	SPDR = 204; //11001100
-	
 	
 	
 	//Running Mode Timer

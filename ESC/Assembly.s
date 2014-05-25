@@ -9,15 +9,14 @@
 #include <avr/io.h>
 #include "ESC.h"
 
-//Free after ASM takes over
 #define	ZERO		r1
 #define	ONE			r2
 #define	COMM_CNT	r3
 #define	TCNT0_TMP	r4
 #define	TIMEOUT_CNT	r5
 
-//Free-to-use registers: r18 to r27 (.def does not work)
-//Use if instructions require r16-r31
+#define SREG_TEMP			r16
+#define ISR_RMP				r17
 #define	RMP					r18
 #define	FLAGS				r19
 #define	COMPARATOR_MASK		r20
@@ -25,36 +24,32 @@
 #define	SAMPLE_CNT			r22
 #define	DUTY_H				r23
 #define	DUTY_L				r24
-#define ISR_RMP				r25
+#define	COMP_DUTY_H			r25
+#define	COMP_DUTY_L			r26
 
 .global Initialise
 .global Loop
 .global TIMER0_COMPB_vect
 .global	WDT_vect
 .global INT1_vect
-//.global TIMER1_CAPT_vect
 .global SPI_STC_vect
 
 //Initialisation
 Initialise:
 	ldi		RMP, 1
 	mov		ONE, RMP
-	
 	clr		FLAGS
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
-	
-	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
-	
-	clr		ZH
-	ldi		ZL, pm_lo8(Phase1)
-	
-	clr		DUTY_H
-	clr		DUTY_L
-
 	sbr		FLAGS, (1 << DIRECTION)
 	sbis	_SFR_IO_ADDR(PINB), PB2
 	cbr		FLAGS, (1 << DIRECTION)
-
+	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
+	clr		ZH
+	ldi		ZL, pm_lo8(Phase1)
+	;clr		DUTY_H
+	;clr		DUTY_L
+	;clr		COMP_DUTY_H
+	;clr		COMP_DUTY_L
 	sei
 /*
 AllOff:
@@ -193,24 +188,21 @@ TimeoutChecker:
 
 
 
-	//Testing using PSCOUT01 to free PD0 (using PB7)
-	ldi		DUTY_H, ((TOP-START_DUTY) >> 8)
-	ldi		DUTY_L, ((TOP-START_DUTY) & 255)
-	sts		OCR0SBH, DUTY_H
-	sts		OCR0SBL, DUTY_L
-
-
-
-
 	; Startup duty cycle
 	ldi		DUTY_H, (START_DUTY >> 8)
 	ldi		DUTY_L, (START_DUTY & 255)
-	;sts		OCR0RAH, DUTY_H ; Original
-	;sts		OCR0RAL, DUTY_L ; Original
+	ldi		COMP_DUTY_H, ((TOP-START_DUTY) >> 8)
+	ldi		COMP_DUTY_L, ((TOP-START_DUTY) & 255)
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
+
+
+
+
 
 	rjmp	Commutate
 TimeoutCheckerEnd:
@@ -309,17 +301,13 @@ StartupMode:
 	;sbrs	COMM_CNT, 7 ; 128
 	rjmp	Commutate
 TransitionMode:
-	//Testing using PSCOUT01 to free PD0 (using PB7)
-	ldi		DUTY_H, ((TOP-IDLE_DUTY) >> 8)
-	ldi		DUTY_L, ((TOP-IDLE_DUTY) & 255)
-	sts		OCR0SBH, DUTY_H
-	sts		OCR0SBL, DUTY_L
-
 	; Idle duty cycle
 	ldi		DUTY_H, (IDLE_DUTY >> 8)
 	ldi		DUTY_L, (IDLE_DUTY & 255)
-	;sts		OCR0RAH, DUTY_H ; Original
-	;sts		OCR0RAL, DUTY_L ; Original
+	ldi		COMP_DUTY_H, ((TOP-IDLE_DUTY) >> 8)
+	ldi		COMP_DUTY_L, ((TOP-IDLE_DUTY) & 255)
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
@@ -349,39 +337,45 @@ INT1_vect:
 	cbr		FLAGS, (1 << DIRECTION)
 	reti
 
-//Control via PWM Input Capture Timer
-/*
-TIMER1_CAPT_vect:
-	
-
-	//If rising edge, record time, switch to falling
-
-	//If falling, record time, calculate duty cycle, switch to rising
-
-
-
-	reti
-*/
-
 //Control via SPI
 SPI_STC_vect:
 	lds		ISR_RMP, SPDR
-	cpi		ISR_RMP, 129
+	in		SREG_TEMP, _SFR_IO_ADDR(SREG) ; Not always necessary
+
+	sbrc	FLAGS, CTRL_DELIM_RXED
+	rjmp	RXDuty
+RXDelim:
+	cpi		ISR_RMP, CTRL_DELIM
 	brne	SPI_STC_vect_end
-
-	ldi		DUTY_H, ((TOP-TEST_DUTY) >> 8)
-	ldi		DUTY_L, ((TOP-TEST_DUTY) & 255)
-	sts		OCR0SBH, DUTY_H
-	sts		OCR0SBL, DUTY_L
-
-	ldi		DUTY_H, (TEST_DUTY >> 8)
-	ldi		DUTY_L, (TEST_DUTY & 255)
+	sbr		FLAGS, (1 << CTRL_DELIM_RXED)
+	rjmp	SPI_STC_vect_end
+RXDuty:
+	sbrc	FLAGS, CTRL_DUTY_BYTE
+	rjmp	RXDutyLow
+RXDutyHigh:
+	mov		DUTY_H, ISR_RMP
+	sbr		FLAGS, (1 << CTRL_DUTY_BYTE)
+	rjmp	SPI_STC_vect_end
+RXDutyLow:
+	mov		DUTY_L, ISR_RMP
+	cbr		FLAGS, (1 << CTRL_DELIM_RXED)
+	cbr		FLAGS, (1 << CTRL_DUTY_BYTE)
+DutyCycleUpdate:
+	ldi		COMP_DUTY_H, (TOP >> 8)
+	ldi		COMP_DUTY_L, (TOP & 255)
+	sub		COMP_DUTY_L, DUTY_L
+	sbc		COMP_DUTY_H, DUTY_H
+	
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
 SPI_STC_vect_end:
-	ldi		ISR_RMP, 204
+	; Next byte for SPI master (speed)
+	;ldi		ISR_RMP, 204
 	sts		SPDR, ISR_RMP
 
+	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
 	reti
