@@ -38,6 +38,8 @@ int main(void) {
 	
 	
 	
+	
+	
 	//Control via SPI
 	DDRD |= (1 << PD2); //MISO
 	DDRD &= ~((1 << PD0)|(1 << PD3)|(1 << PD4)); //SS, MOSI, SCK

@@ -9,11 +9,12 @@
 #include <avr/io.h>
 #include "ESC.h"
 
-#define	ZERO		r1
-#define	ONE			r2
-#define	COMM_CNT	r3
-#define	TCNT0_TMP	r4
-#define	TIMEOUT_CNT	r5
+#define	ZERO			r1
+#define	ONE				r2
+#define	COMM_CNT		r3
+#define	TCNT0_TMP		r4
+//#define	TIMEOUT_CNT		r5
+#define	SAMPLE_CNT		r6
 
 #define SREG_TEMP			r16
 #define ISR_RMP				r17
@@ -21,11 +22,10 @@
 #define	FLAGS				r19
 #define	COMPARATOR_MASK		r20
 #define	SAMPLE_SUM			r21
-#define	SAMPLE_CNT			r22
-#define	DUTY_H				r23
-#define	DUTY_L				r24
-#define	COMP_DUTY_H			r25
-#define	COMP_DUTY_L			r26
+#define	DUTY_H				r22
+#define	DUTY_L				r23
+#define	COMP_DUTY_H			r24
+#define	COMP_DUTY_L			r25
 
 .global Initialise
 .global Loop
@@ -40,17 +40,16 @@ Initialise:
 	mov		ONE, RMP
 	clr		FLAGS
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
+	
 	sbr		FLAGS, (1 << DIRECTION)
-	sbis	_SFR_IO_ADDR(PINB), PB2
+	sbis	_SFR_IO_ADDR(DIRECTION_PORT), DIRECTION_PIN
 	cbr		FLAGS, (1 << DIRECTION)
+
 	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
-	;clr		DUTY_H
-	;clr		DUTY_L
-	;clr		COMP_DUTY_H
-	;clr		COMP_DUTY_L
 	sei
+
 /*
 AllOff:
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
@@ -58,7 +57,36 @@ AllOff:
 	sts		LOW_B, ZERO
 	sts		LOW_C, ZERO
 */
+
 	ret
+
+
+
+Disarm:
+	cbr		FLAGS, (1 << RUNNING_MODE) ; Prevent running mode commutation
+
+	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
+	sts		LOW_A, ZERO
+	sts		LOW_B, ZERO
+	sts		LOW_C, ZERO
+	/*
+	ldi		DUTY_H, 0
+	ldi		DUTY_L, 0
+	ldi		COMP_DUTY_H, (TOP >> 8)
+	ldi		COMP_DUTY_L, (TOP & 255)
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
+	sts		OCR1RAH, DUTY_H
+	sts		OCR1RAL, DUTY_L
+	sts		OCR2RAH, DUTY_H
+	sts		OCR2RAL, DUTY_L
+	*/
+	cbr		FLAGS, (1 << ARMED)
+
+	rjmp	Loop
+
+
+
 
 //Commutation
 Commutate:
@@ -181,40 +209,50 @@ CommutateEnd:
 	rjmp	Loop
 
 
+
+
+
 //Actual Loop
 Loop:
 
-//Timeout
-TimeoutChecker:
-	sbrs	TIMEOUT_CNT, 0
-	rjmp	TimeoutCheckerEnd
 
-	clr		TIMEOUT_CNT
-	clr		COMM_CNT
+
+//Armed/Disarmed checker
+ArmedChecker:
+	sbrc	FLAGS, ARMED
+	rjmp	ArmedCheckerEnd
+
+	//Check for arming signal
+	//Do nothing else, except service interrupts
+
+	rjmp	Loop
+ArmedCheckerEnd:
+
+
+
+
+//Commutation timeout checker
+//Goes back to startup mode
+CommutationTimeoutChecker:
+	sbrs	FLAGS, COMM_TIMEOUT_FLAG
+	rjmp	CommutationTimeoutCheckerEnd
+
+StartupModeTransition:
+	; Prepare for clean startup
+	cbr		FLAGS, (1 << COMM_TIMEOUT_FLAG)
 	cbr		FLAGS, (1 << RUNNING_MODE)
+	clr		COMM_CNT
 	
-
-
-
 	; Startup duty cycle
 	ldi		DUTY_H, (START_DUTY >> 8)
 	ldi		DUTY_L, (START_DUTY & 255)
 	ldi		COMP_DUTY_H, ((TOP-START_DUTY) >> 8)
 	ldi		COMP_DUTY_L, ((TOP-START_DUTY) & 255)
-	/*
-	sts		OCR0SBH, COMP_DUTY_H
-	sts		OCR0SBL, COMP_DUTY_L
-	sts		OCR1RAH, DUTY_H
-	sts		OCR1RAL, DUTY_L
-	sts		OCR2RAH, DUTY_H
-	sts		OCR2RAL, DUTY_L
-	*/
-
-
-
-
+	
 	rjmp	Commutate
-TimeoutCheckerEnd:
+CommutationTimeoutCheckerEnd:
+
+
 
 //Sample comparator
 ComparatorSampler:
@@ -241,6 +279,9 @@ StartupModeSensitivity:
 	;sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
 
+
+
+
 //Startup ZC Filter
 //Full power startup has no PWM noise
 StartupModeZCFilter:
@@ -263,6 +304,9 @@ StartupModeComparatorStateLow:
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
+
+
+
 
 //Running ZC Filter
 RunningModeZCFilter:
@@ -290,6 +334,9 @@ ZCFilterEnd:
 	clr		SAMPLE_SUM
 	rjmp	Loop
 
+
+
+
 //ZC Event
 ZCEvent:
 RunningMode:
@@ -300,31 +347,46 @@ RunningMode:
 	asr		TCNT0_TMP ; Divide by 2
 	sts		OCR0B, TCNT0_TMP
 	sbr		FLAGS, (1 << COMMUTATE_FLAG)
+
+
+
+
+	inc		COMM_CNT
+	;sbrc	COMM_CNT, 7 ; 128
+	;rjmp	Disarm ; N commutations with control input, timeout
+
+
+
+
 	rjmp	Loop
 StartupMode:
 	inc		COMM_CNT
-	;sbrs	COMM_CNT, 3 ; 8
 	;sbrs	COMM_CNT, 4 ; 16
 	sbrs	COMM_CNT, 5 ; 32
 	;sbrs	COMM_CNT, 6 ; 64
-	;sbrs	COMM_CNT, 7 ; 128
 	rjmp	Commutate
-TransitionMode:
+RunningModeTransition:
 	; Idle duty cycle
 	ldi		DUTY_H, (IDLE_DUTY >> 8)
 	ldi		DUTY_L, (IDLE_DUTY & 255)
 	ldi		COMP_DUTY_H, ((TOP-IDLE_DUTY) >> 8)
 	ldi		COMP_DUTY_L, ((TOP-IDLE_DUTY) & 255)
-	/*
-	sts		OCR0SBH, COMP_DUTY_H
-	sts		OCR0SBL, COMP_DUTY_L
-	sts		OCR1RAH, DUTY_H
-	sts		OCR1RAL, DUTY_L
-	sts		OCR2RAH, DUTY_H
-	sts		OCR2RAL, DUTY_L
-	*/
+
+
+
+	; COMM_CNT to be used for control input timeout checking
+	; Or speed calculation (do not clear?)
+	clr		COMM_CNT
+
+
+
+
+
 	sbr		FLAGS, (1 << RUNNING_MODE)
 	rjmp	RunningMode
+
+
+
 
 //Interrupt Handlers
 //Running Mode Commutation Timer
@@ -334,22 +396,40 @@ TIMER0_COMPB_vect:
 	cbr		FLAGS, (1 << COMMUTATE_FLAG)
 	rjmp	Commutate
 
-//Timeout
+
+
+
+//Commutation timeout
 WDT_vect:
-	inc		TIMEOUT_CNT
+	sbr		FLAGS, (1 << COMM_TIMEOUT_FLAG)
 	reti
+
+
+
 
 //Direction Control
 INT1_vect:
 	; Check INT1 pin (PB2), manage FLAGS, (1 << DIRECTION)
 	sbr		FLAGS, (1 << DIRECTION)
-	sbis	_SFR_IO_ADDR(PINB), PB2
+	sbis	_SFR_IO_ADDR(DIRECTION_PORT), DIRECTION_PIN
 	cbr		FLAGS, (1 << DIRECTION)
 	reti
 
+
+
+
 //Control via SPI
-//Might be too slow
 SPI_STC_vect:
+
+
+
+
+	sbr		FLAGS, (1 << ARMED) ; Any input via SPI arms ESC (for now)
+
+
+
+
+
 	sbrs	FLAGS, RUNNING_MODE
 	reti
 
@@ -384,18 +464,17 @@ DutyCycleUpdate:
 	ldi		COMP_DUTY_L, (TOP & 255)
 	sub		COMP_DUTY_L, DUTY_L
 	sbc		COMP_DUTY_H, DUTY_H
-	
-	/*
-	sts		OCR0SBH, COMP_DUTY_H
-	sts		OCR0SBL, COMP_DUTY_L
-	sts		OCR1RAH, DUTY_H
-	sts		OCR1RAL, DUTY_L
-	sts		OCR2RAH, DUTY_H
-	sts		OCR2RAL, DUTY_L
-	*/
+
+
+	; COMM_CNT used for control input timeout checking
+	; Reset, since new input is received
+	clr		COMM_CNT
+
+
+
+
 SPI_STC_vect_end:
 	; Next byte for SPI master (speed)
-	;ldi		ISR_RMP, 204
 	sts		SPDR, ISR_RMP
 
 	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
@@ -406,5 +485,5 @@ RXDutyError:
 	cbr		FLAGS, (1 << CTRL_DELIM_RXED)
 	cbr		FLAGS, (1 << CTRL_DUTY_BYTE)
 
-	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
+	out		_SFR_IO_ADDR(SREG), SREG_TEMP
 	reti

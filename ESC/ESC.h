@@ -19,9 +19,6 @@ Phase 6:	B,C
 */
 
 /*
-Port:
-ZCFilter (account for hysteresis
-
 Feature list:
 Battery voltage drop compensation
 COMP_PWM: Low phase low side FET is PWMed. When off, high side FET is switched on. Can be done in software. Cleaner waveform.
@@ -42,6 +39,9 @@ Speed report via SPI/I2C
 #define LOW_B	PCTL1 //PSCOUT10 => PC0
 #define LOW_C	PCTL2 //PSCOUT20 => PB0
 
+#define DIRECTION_PORT	PINB
+#define DIRECTION_PIN	PB2
+
 #define COMPARATOR_A	AC0O //PD7, ACMP0
 #define COMPARATOR_B	AC1O //PC6, ACMP1
 #define COMPARATOR_C	AC2O //PD5, ACMP2
@@ -53,6 +53,8 @@ Speed report via SPI/I2C
 #define DIRECTION			3
 #define CTRL_DELIM_RXED		4
 #define CTRL_DUTY_BYTE		5
+#define COMM_TIMEOUT_FLAG	6
+#define ARMED				7
 
 //PWM Settings
 #define TOP			1024
