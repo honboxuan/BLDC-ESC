@@ -12,8 +12,8 @@
 #define	ZERO			r1
 #define	ONE				r2
 #define	COMM_CNT		r3
-#define	TCNT0_TMP		r4
-//#define	TIMEOUT_CNT		r5
+#define CYCLE_CNT		r4
+#define	TCNT0_TMP		r5
 #define	SAMPLE_CNT		r6
 
 #define SREG_TEMP			r16
@@ -34,8 +34,14 @@
 .global INT1_vect
 .global SPI_STC_vect
 
-//Initialisation
+/*==========Routines==========*/
+/*----------Initialise----------*/
 Initialise:
+	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
+	sts		LOW_A, ZERO
+	sts		LOW_B, ZERO
+	sts		LOW_C, ZERO
+
 	ldi		RMP, 1
 	mov		ONE, RMP
 	clr		FLAGS
@@ -48,28 +54,19 @@ Initialise:
 	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
+
 	sei
-
-/*
-AllOff:
-	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
-	sts		LOW_A, ZERO
-	sts		LOW_B, ZERO
-	sts		LOW_C, ZERO
-*/
-
 	ret
 
-
-
+/*----------Disarm----------*/
 Disarm:
-	cbr		FLAGS, (1 << RUNNING_MODE) ; Prevent running mode commutation
+	cli
 
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
 	sts		LOW_A, ZERO
 	sts		LOW_B, ZERO
 	sts		LOW_C, ZERO
-	/*
+	
 	ldi		DUTY_H, 0
 	ldi		DUTY_L, 0
 	ldi		COMP_DUTY_H, (TOP >> 8)
@@ -80,15 +77,16 @@ Disarm:
 	sts		OCR1RAL, DUTY_L
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
-	*/
+	
+	cbr		FLAGS, (1 << COMMUTATE_FLAG)
+	cbr		FLAGS, (1 << RUNNING_MODE)
 	cbr		FLAGS, (1 << ARMED)
+
+	sei
 
 	rjmp	Loop
 
-
-
-
-//Commutation
+/*----------Commutate----------*/
 Commutate:
 	wdr
 	sts		TCNT0, ZERO
@@ -100,6 +98,8 @@ Commutate:
 	sts		OCR2RAH, DUTY_H
 	sts		OCR2RAL, DUTY_L
 	
+	inc		COMM_CNT
+
 	ijmp
 Phase1: ; B,A
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
@@ -108,6 +108,11 @@ Phase1: ; B,A
 	sts		LOW_A, ONE
 	sbi		_SFR_IO_ADDR(HIGH_PORT), HIGH_B
 	ldi		COMPARATOR_MASK, (1 << COMPARATOR_C)
+	
+	
+	inc		CYCLE_CNT ; For control input timeout
+
+	
 	sbrs	FLAGS, DIRECTION
 	rjmp	Phase1Dir0
 Phase1Dir1:
@@ -208,19 +213,97 @@ CommutateEnd:
 	reti
 	rjmp	Loop
 
+/*----------ZC Filter----------*/
+//Startup Mode
+//Full power startup has no PWM noise
+StartupModeZCFilter:
+	clr		SAMPLE_CNT
+	sbrs	FLAGS, COMPARATOR_STATE
+	rjmp	StartupModeComparatorStateLow
+StartupModeComparatorStateHigh:
+	cpi		SAMPLE_SUM, 1
+
+	brsh	ZCFilterEnd
+	lds		TCNT0_TMP, TCNT0
+	cbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+StartupModeComparatorStateLow:
+	cpi		SAMPLE_SUM, 32
+
+	brlo	ZCFilterEnd 
+	lds		TCNT0_TMP, TCNT0
+	sbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+//Running Mode
+RunningModeZCFilter:
+	clr		SAMPLE_CNT
+	sbrs	FLAGS, COMPARATOR_STATE
+	rjmp	RunningModeComparatorStateLow
+RunningModeComparatorStateHigh:
+	cpi		SAMPLE_SUM, 16
+	brsh	ZCFilterEnd
+	lds		TCNT0_TMP, TCNT0
+	cbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+RunningModeComparatorStateLow:
+	cpi		SAMPLE_SUM, 120
+	brlo	ZCFilterEnd 
+	lds		TCNT0_TMP, TCNT0
+	sbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+//End of ZC Filter
+ZCFilterEnd:
+	clr		SAMPLE_SUM
+	rjmp	Loop
+
+/*----------ZC Event----------*/
+ZCEvent:
+RunningMode:
+	sbrs	FLAGS, RUNNING_MODE
+	rjmp	StartupMode
+
+	sbrc	CYCLE_CNT, 7 ; 128
+	rjmp	Disarm ; N cycles without control input, timeout
+
+	sts		TCNT0, ZERO
+	asr		TCNT0_TMP ; Divide by 2
+	sts		OCR0B, TCNT0_TMP
+	sbr		FLAGS, (1 << COMMUTATE_FLAG)
+
+	rjmp	Loop
+StartupMode:
+	;inc		COMM_CNT ; Shifted to actual commutation routine
+	;sbrs	COMM_CNT, 4 ; 16
+	sbrs	COMM_CNT, 5 ; 32
+	;sbrs	COMM_CNT, 6 ; 64
+	rjmp	Commutate
+RunningModeTransition:
+	; Idle duty cycle
+	ldi		DUTY_H, (IDLE_DUTY >> 8)
+	ldi		DUTY_L, (IDLE_DUTY & 255)
+	ldi		COMP_DUTY_H, ((TOP-IDLE_DUTY) >> 8)
+	ldi		COMP_DUTY_L, ((TOP-IDLE_DUTY) & 255)
+
+	clr		CYCLE_CNT ; Using CYCLE_CNT for control input timeout
+
+	sbr		FLAGS, (1 << RUNNING_MODE)
+	rjmp	RunningMode
 
 
 
-
-//Actual Loop
+/*==========Main Loop Start==========*/
 Loop:
 
-
-
-//Armed/Disarmed checker
+/*----------Arm/Disarm Checker----------*/
 ArmedChecker:
 	sbrc	FLAGS, ARMED
 	rjmp	ArmedCheckerEnd
+
+	//Beep
 
 	//Check for arming signal
 	//Do nothing else, except service interrupts
@@ -228,11 +311,10 @@ ArmedChecker:
 	rjmp	Loop
 ArmedCheckerEnd:
 
-
-
-
-//Commutation timeout checker
-//Goes back to startup mode
+/*----------Commutation Timeout Checker----------*/
+//Indicates fault
+//Should disarm
+//Currently goes back to startup mode
 CommutationTimeoutChecker:
 	sbrs	FLAGS, COMM_TIMEOUT_FLAG
 	rjmp	CommutationTimeoutCheckerEnd
@@ -240,9 +322,10 @@ CommutationTimeoutChecker:
 StartupModeTransition:
 	; Prepare for clean startup
 	cbr		FLAGS, (1 << COMM_TIMEOUT_FLAG)
+	cbr		FLAGS, (1 << COMMUTATE_FLAG)
 	cbr		FLAGS, (1 << RUNNING_MODE)
 	clr		COMM_CNT
-	
+
 	; Startup duty cycle
 	ldi		DUTY_H, (START_DUTY >> 8)
 	ldi		DUTY_L, (START_DUTY & 255)
@@ -252,9 +335,7 @@ StartupModeTransition:
 	rjmp	Commutate
 CommutationTimeoutCheckerEnd:
 
-
-
-//Sample comparator
+/*----------Comparator Sampler----------*/
 ComparatorSampler:
 	lds		RMP, ACSR
 	and		RMP, COMPARATOR_MASK
@@ -278,136 +359,24 @@ StartupModeSensitivity:
 	;sbrs	SAMPLE_CNT, 6 ; 64
 	;sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
+	rjmp	StartupModeZCFilter
 
 
-
-
-//Startup ZC Filter
-//Full power startup has no PWM noise
-StartupModeZCFilter:
-	clr		SAMPLE_CNT
-	sbrs	FLAGS, COMPARATOR_STATE
-	rjmp	StartupModeComparatorStateLow
-StartupModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 1
-
-	brsh	ZCFilterEnd
-	lds		TCNT0_TMP, TCNT0
-	cbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
-	rjmp	ZCEvent
-StartupModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 32
-
-	brlo	ZCFilterEnd 
-	lds		TCNT0_TMP, TCNT0
-	sbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
-	rjmp	ZCEvent
-
-
-
-
-//Running ZC Filter
-RunningModeZCFilter:
-	clr		SAMPLE_CNT
-	sbrs	FLAGS, COMPARATOR_STATE
-	rjmp	RunningModeComparatorStateLow
-RunningModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 16
-
-	brsh	ZCFilterEnd
-	lds		TCNT0_TMP, TCNT0
-	cbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
-	rjmp	ZCEvent
-RunningModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 120
-
-	brlo	ZCFilterEnd 
-	lds		TCNT0_TMP, TCNT0
-	sbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
-	rjmp	ZCEvent
-
-ZCFilterEnd:
-	clr		SAMPLE_SUM
-	rjmp	Loop
-
-
-
-
-//ZC Event
-ZCEvent:
-RunningMode:
-	sbrs	FLAGS, RUNNING_MODE
-	rjmp	StartupMode
 	
-	sts		TCNT0, ZERO
-	asr		TCNT0_TMP ; Divide by 2
-	sts		OCR0B, TCNT0_TMP
-	sbr		FLAGS, (1 << COMMUTATE_FLAG)
-
-
-
-
-	inc		COMM_CNT
-	;sbrc	COMM_CNT, 7 ; 128
-	;rjmp	Disarm ; N commutations with control input, timeout
-
-
-
-
-	rjmp	Loop
-StartupMode:
-	inc		COMM_CNT
-	;sbrs	COMM_CNT, 4 ; 16
-	sbrs	COMM_CNT, 5 ; 32
-	;sbrs	COMM_CNT, 6 ; 64
-	rjmp	Commutate
-RunningModeTransition:
-	; Idle duty cycle
-	ldi		DUTY_H, (IDLE_DUTY >> 8)
-	ldi		DUTY_L, (IDLE_DUTY & 255)
-	ldi		COMP_DUTY_H, ((TOP-IDLE_DUTY) >> 8)
-	ldi		COMP_DUTY_L, ((TOP-IDLE_DUTY) & 255)
-
-
-
-	; COMM_CNT to be used for control input timeout checking
-	; Or speed calculation (do not clear?)
-	clr		COMM_CNT
-
-
-
-
-
-	sbr		FLAGS, (1 << RUNNING_MODE)
-	rjmp	RunningMode
-
-
-
-
-//Interrupt Handlers
-//Running Mode Commutation Timer
+/*==========Interrupt Handlers==========*/
+/*----------Running Mode Commutation Timer----------*/
 TIMER0_COMPB_vect:
 	sbrs	FLAGS, COMMUTATE_FLAG
 	reti
 	cbr		FLAGS, (1 << COMMUTATE_FLAG)
 	rjmp	Commutate
 
-
-
-
-//Commutation timeout
+/*----------Commutation Timeout Timer----------*/
 WDT_vect:
 	sbr		FLAGS, (1 << COMM_TIMEOUT_FLAG)
 	reti
 
-
-
-
-//Direction Control
+/*----------Direction Control Pin----------*/
 INT1_vect:
 	; Check INT1 pin (PB2), manage FLAGS, (1 << DIRECTION)
 	sbr		FLAGS, (1 << DIRECTION)
@@ -415,11 +384,9 @@ INT1_vect:
 	cbr		FLAGS, (1 << DIRECTION)
 	reti
 
-
-
-
-//Control via SPI
+/*----------SPI Control Input----------*/
 SPI_STC_vect:
+
 
 
 
@@ -447,11 +414,6 @@ RXDuty:
 	sbrc	FLAGS, CTRL_DUTY_BYTE
 	rjmp	RXDutyLow
 RXDutyHigh:
-
-	; Testing
-	cpi		ISR_RMP, 4
-	brsh	RXDutyError
-
 	mov		DUTY_H, ISR_RMP
 	sbr		FLAGS, (1 << CTRL_DUTY_BYTE)
 	rjmp	SPI_STC_vect_end
@@ -465,25 +427,11 @@ DutyCycleUpdate:
 	sub		COMP_DUTY_L, DUTY_L
 	sbc		COMP_DUTY_H, DUTY_H
 
-
-	; COMM_CNT used for control input timeout checking
-	; Reset, since new input is received
-	clr		COMM_CNT
-
-
-
+	clr		CYCLE_CNT ; Using CYCLE_CNT for control input timeout
 
 SPI_STC_vect_end:
 	; Next byte for SPI master (speed)
 	sts		SPDR, ISR_RMP
 
 	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
-	reti
-
-; Testing
-RXDutyError:
-	cbr		FLAGS, (1 << CTRL_DELIM_RXED)
-	cbr		FLAGS, (1 << CTRL_DUTY_BYTE)
-
-	out		_SFR_IO_ADDR(SREG), SREG_TEMP
 	reti
