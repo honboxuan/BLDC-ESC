@@ -13,8 +13,14 @@
 #define	ONE				r2
 #define	COMM_CNT		r3
 #define CYCLE_CNT		r4
-#define	TCNT0_TMP		r5
-#define	SAMPLE_CNT		r6
+#define	SAMPLE_CNT		r5
+#define	TCNT0_TMP		r6
+
+
+#define	TCNT1H_TMP		r7
+#define	TCNT1L_TMP		r8
+
+
 
 #define SREG_TEMP			r16
 #define ISR_RMP				r17
@@ -30,6 +36,7 @@
 .global Initialise
 .global Loop
 .global TIMER0_COMPB_vect
+//.global TIMER1_COMPB_vect
 .global	WDT_vect
 .global INT1_vect
 .global SPI_STC_vect
@@ -54,6 +61,8 @@ Initialise:
 	ldi		COMPARATOR_MASK, (1 << COMPARATOR_A)
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
+
+	sbr		FLAGS, (1 << ARMED) // Starting off armed (debug)
 
 	sei
 	ret
@@ -89,8 +98,27 @@ Disarm:
 /*----------Commutate----------*/
 Commutate:
 	wdr
-	sts		TCNT0, ZERO
+	;sts		TCNT0, ZERO
 	
+
+
+	//Calculate delay for running mode
+	/*
+	Theoretically (currently not true):
+	LSR+ROR * 2 for 1/4 (1/4 delay)
+	LSR+ROR * 6 for 1/64 (timer0 prescaler)
+	Right shift 8, i.e. Take only upper 8 bits
+	*/
+	lds		TCNT1H_TMP, TCNT1H
+	lds		TCNT1L_TMP, TCNT1L
+
+
+
+
+	sts		TCNT1H, ZERO
+	sts		TCNT1L, ZERO
+
+
 	sts		OCR0SBH, COMP_DUTY_H
 	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
@@ -224,7 +252,13 @@ StartupModeComparatorStateHigh:
 	cpi		SAMPLE_SUM, 1
 
 	brsh	ZCFilterEnd
-	lds		TCNT0_TMP, TCNT0
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
 	cbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
@@ -232,7 +266,13 @@ StartupModeComparatorStateLow:
 	cpi		SAMPLE_SUM, 32
 
 	brlo	ZCFilterEnd 
-	lds		TCNT0_TMP, TCNT0
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
@@ -244,14 +284,26 @@ RunningModeZCFilter:
 RunningModeComparatorStateHigh:
 	cpi		SAMPLE_SUM, 16
 	brsh	ZCFilterEnd
-	lds		TCNT0_TMP, TCNT0
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
 	cbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
 RunningModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 120
+	cpi		SAMPLE_SUM, 125
 	brlo	ZCFilterEnd 
-	lds		TCNT0_TMP, TCNT0
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
@@ -266,19 +318,81 @@ RunningMode:
 	sbrs	FLAGS, RUNNING_MODE
 	rjmp	StartupMode
 
-	sbrc	CYCLE_CNT, 7 ; 128
-	rjmp	Disarm ; N cycles without control input, timeout
+	;sbrc	CYCLE_CNT, 7 ; 128
+	;rjmp	Disarm ; N cycles without control input, timeout
 
+	/*
 	sts		TCNT0, ZERO
-	asr		TCNT0_TMP ; Divide by 2
+	lsr		TCNT0_TMP ; Divide by 2
 	sts		OCR0B, TCNT0_TMP
+	*/
+
+	//Insert running mode delay
+	;cli
+	
+	//Not cool moves here
+	
+	lsl		TCNT1L_TMP
+	rol		TCNT1H_TMP
+	
+	lsl		TCNT1L_TMP
+	rol		TCNT1H_TMP
+
+	lsl		TCNT1L_TMP
+	rol		TCNT1H_TMP
+	
+	sts		OCR0B, TCNT1H_TMP
+	sts		TCNT0, ZERO
+
+	;sei
+
+
+	//Effectively timer1 16-bit output, right shift 5
+	//1/64 prescaler on timer0 should already require 6 right shifts!!!!
+
+
+	;cli
+	/*
+	//Using 16-bit timer1
+	sts		TCNT1H, ZERO
+	sts		TCNT1L, ZERO
+
+	;lsr		TCNT1H_TMP
+	;ror		TCNT1L_TMP
+	;lsr		TCNT1H_TMP
+	;ror		TCNT1L_TMP
+	;lsr		TCNT1H_TMP
+	;ror		TCNT1L_TMP
+	;lsr		TCNT1H_TMP
+	;ror		TCNT1L_TMP
+	;lsr		TCNT1H_TMP
+	;ror		TCNT1L_TMP
+
+
+	;sts		OCR1BH, TCNT1H_TMP
+	;sts		OCR1BL, TCNT1L_TMP
+
+	//Try fixed delay
+	ldi		RMP, 10
+	sts		OCR1BH, RMP
+	ldi		RMP, 200
+	sts		OCR1BL, RMP
+	*/
+
+	;sei
+
+
+
+
 	sbr		FLAGS, (1 << COMMUTATE_FLAG)
 
 	rjmp	Loop
 StartupMode:
 	;inc		COMM_CNT ; Shifted to actual commutation routine
 	;sbrs	COMM_CNT, 4 ; 16
+
 	sbrs	COMM_CNT, 5 ; 32
+	
 	;sbrs	COMM_CNT, 6 ; 64
 	rjmp	Commutate
 RunningModeTransition:
@@ -355,7 +469,7 @@ RunningModeSensitivity:
 	rjmp	RunningModeZCFilter
 StartupModeSensitivity:
 	;sbrs	SAMPLE_CNT, 4 ; 16
-	sbrs	SAMPLE_CNT, 5 ; 32 (use if full power start with 32,1)
+	sbrs	SAMPLE_CNT, 5 ; 32 (use if full power start with 1,32)
 	;sbrs	SAMPLE_CNT, 6 ; 64
 	;sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
@@ -365,12 +479,24 @@ StartupModeSensitivity:
 	
 /*==========Interrupt Handlers==========*/
 /*----------Running Mode Commutation Timer----------*/
+
 TIMER0_COMPB_vect:
 	sbrs	FLAGS, COMMUTATE_FLAG
 	reti
 	cbr		FLAGS, (1 << COMMUTATE_FLAG)
 	rjmp	Commutate
 
+/*
+TIMER1_COMPB_vect:
+	sbrs	FLAGS, COMMUTATE_FLAG
+	reti
+	
+	sbi		_SFR_IO_ADDR(PORTB), PB6
+	cbi		_SFR_IO_ADDR(PORTB), PB6
+
+	cbr		FLAGS, (1 << COMMUTATE_FLAG)
+	rjmp	Commutate
+*/
 /*----------Commutation Timeout Timer----------*/
 WDT_vect:
 	sbr		FLAGS, (1 << COMM_TIMEOUT_FLAG)
@@ -385,13 +511,16 @@ INT1_vect:
 	reti
 
 /*----------SPI Control Input----------*/
+
+//MOVE STUFF OUT OF ISR!!!!
+
 SPI_STC_vect:
 
 
 
 
 
-	sbr		FLAGS, (1 << ARMED) ; Any input via SPI arms ESC (for now)
+	//sbr		FLAGS, (1 << ARMED) ; Any input via SPI arms ESC (for now)
 
 
 
@@ -407,13 +536,21 @@ SPI_STC_vect:
 	rjmp	RXDuty
 RXDelim:
 	cpi		ISR_RMP, CTRL_DELIM
-	brne	SPI_STC_vect_end
+	;brne	SPI_STC_vect_end
+	
+	brne	RXDutyError //Extreme
+
 	sbr		FLAGS, (1 << CTRL_DELIM_RXED)
 	rjmp	SPI_STC_vect_end
 RXDuty:
 	sbrc	FLAGS, CTRL_DUTY_BYTE
 	rjmp	RXDutyLow
 RXDutyHigh:
+
+	; Testing
+	cpi		ISR_RMP, 4
+	brsh	RXDutyError
+
 	mov		DUTY_H, ISR_RMP
 	sbr		FLAGS, (1 << CTRL_DUTY_BYTE)
 	rjmp	SPI_STC_vect_end
@@ -432,6 +569,38 @@ DutyCycleUpdate:
 SPI_STC_vect_end:
 	; Next byte for SPI master (speed)
 	sts		SPDR, ISR_RMP
+
+	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
+	reti
+
+; Testing
+RXDutyError:
+	cbr		FLAGS, (1 << CTRL_DELIM_RXED)
+	cbr		FLAGS, (1 << CTRL_DUTY_BYTE)
+
+
+	//Disarm (extreme)
+	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
+	sts		LOW_A, ZERO
+	sts		LOW_B, ZERO
+	sts		LOW_C, ZERO
+	
+	ldi		DUTY_H, 0
+	ldi		DUTY_L, 0
+	ldi		COMP_DUTY_H, (TOP >> 8)
+	ldi		COMP_DUTY_L, (TOP & 255)
+	sts		OCR0SBH, COMP_DUTY_H
+	sts		OCR0SBL, COMP_DUTY_L
+	sts		OCR1RAH, DUTY_H
+	sts		OCR1RAL, DUTY_L
+	sts		OCR2RAH, DUTY_H
+	sts		OCR2RAL, DUTY_L
+	
+	cbr		FLAGS, (1 << COMMUTATE_FLAG)
+	cbr		FLAGS, (1 << RUNNING_MODE)
+	cbr		FLAGS, (1 << ARMED)
+
+
 
 	out		_SFR_IO_ADDR(SREG), SREG_TEMP ; Not always necessary
 	reti

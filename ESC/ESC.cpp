@@ -25,16 +25,7 @@ int main(void) {
 	
 	
 	
-	//DDRB |= (1 << PB7)|(1 << PB6); //Debugging
-	
-	
-	
-	
-	
-	
-	//Control via PWM Input Capture Timer
-	//TCCR1B |= (1 << ICES1)|(1 << CS10); //Rising edge trigger, no prescaler
-	//TIMSK1 |= (1 << ICIE1); //Enable Input Capture Interrupt
+	DDRB |= (1 << PB6); //Debugging
 	
 	
 	
@@ -48,6 +39,19 @@ int main(void) {
 	
 	
 	
+	
+	//Commutation Timer
+	TCCR1B |= (1 << CS10); //No prescaler
+		
+	//Running Mode Timer
+	TIMSK0 |= (1 << OCIE0B);
+	OCR0B = 0;
+	TCCR0B |= (1 << CS01)|(1 << CS00); //1/64 prescaler
+	
+	
+	
+	/*
+	//Original "working" (8-bit insufficient)
 	//Running Mode Timer
 	//TIMSK0 |= (1 << OCIE0B)|(1 << TOIE0);
 	TIMSK0 |= (1 << OCIE0B);
@@ -55,9 +59,12 @@ int main(void) {
 	TCCR0B |= (1 << CS00); //No prescaler
 	//TCCR0B |= (1 << CS01); //1/8 prescaler
 	//TCCR0B |= (1 << CS01)|(1 << CS00); //1/64 prescaler
+	*/
+	
+	
 	
 	//Watchdog Timer
-	WDTCSR |= (1 << WDIE); //Interrupt mode
+	WDTCSR |= (1 << WDIE); //Interrupt mode, 16ms
 	
 	//Direction Change Interrupt
 	EICRA |= (1 << ISC10); //Any logical change
