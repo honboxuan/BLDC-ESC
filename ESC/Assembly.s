@@ -11,11 +11,12 @@
 
 #define	ZERO			r1
 #define	ONE				r2
+
 #define	COMM_CNT		r3
 #define CYCLE_CNT		r4
 #define	SAMPLE_CNT		r5
-#define	TCNT0_TMP		r6
 
+//#define	TCNT0_TMP		r6
 
 #define	TCNT1H_TMP		r7
 #define	TCNT1L_TMP		r8
@@ -32,6 +33,7 @@
 #define	DUTY_L				r23
 #define	COMP_DUTY_H			r24
 #define	COMP_DUTY_L			r25
+
 
 .global Initialise
 .global Loop
@@ -62,7 +64,7 @@ Initialise:
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
 
-	sbr		FLAGS, (1 << ARMED) // Starting off armed (debug)
+	;sbr		FLAGS, (1 << ARMED) // Starting off armed (debug)
 
 	sei
 	ret
@@ -119,6 +121,7 @@ Commutate:
 	sts		TCNT1L, ZERO
 
 
+	//Update duty cycle
 	sts		OCR0SBH, COMP_DUTY_H
 	sts		OCR0SBL, COMP_DUTY_L
 	sts		OCR1RAH, DUTY_H
@@ -127,6 +130,11 @@ Commutate:
 	sts		OCR2RAL, DUTY_L
 	
 	inc		COMM_CNT
+
+	//Sampling should not survive past commutations
+	//In fact, no need for sampling if waiting for commutation (running mode)
+	;clr		SAMPLE_CNT
+	;clr		SAMPLE_SUM
 
 	ijmp
 Phase1: ; B,A
@@ -245,7 +253,7 @@ CommutateEnd:
 //Startup Mode
 //Full power startup has no PWM noise
 StartupModeZCFilter:
-	clr		SAMPLE_CNT
+	;clr		SAMPLE_CNT
 	sbrs	FLAGS, COMPARATOR_STATE
 	rjmp	StartupModeComparatorStateLow
 StartupModeComparatorStateHigh:
@@ -278,7 +286,7 @@ StartupModeComparatorStateLow:
 	rjmp	ZCEvent
 //Running Mode
 RunningModeZCFilter:
-	clr		SAMPLE_CNT
+	;clr		SAMPLE_CNT
 	sbrs	FLAGS, COMPARATOR_STATE
 	rjmp	RunningModeComparatorStateLow
 RunningModeComparatorStateHigh:
@@ -310,16 +318,19 @@ RunningModeComparatorStateLow:
 //End of ZC Filter
 ZCFilterEnd:
 	clr		SAMPLE_SUM
+	clr		SAMPLE_CNT
 	rjmp	Loop
 
 /*----------ZC Event----------*/
 ZCEvent:
+	clr		SAMPLE_SUM
+	clr		SAMPLE_CNT
 RunningMode:
 	sbrs	FLAGS, RUNNING_MODE
 	rjmp	StartupMode
 
-	;sbrc	CYCLE_CNT, 7 ; 128
-	;rjmp	Disarm ; N cycles without control input, timeout
+	sbrc	CYCLE_CNT, 7 ; 128
+	rjmp	Disarm ; N cycles without control input, timeout
 
 	/*
 	sts		TCNT0, ZERO
@@ -449,8 +460,15 @@ StartupModeTransition:
 	rjmp	Commutate
 CommutationTimeoutCheckerEnd:
 
+
+
 /*----------Comparator Sampler----------*/
+
+//No need for sampling while waiting for commutation in running mode
 ComparatorSampler:
+	sbrc	FLAGS, COMMUTATE_FLAG
+	rjmp	Loop
+
 	lds		RMP, ACSR
 	and		RMP, COMPARATOR_MASK
 	breq	ComparatorSampleLow
@@ -474,7 +492,6 @@ StartupModeSensitivity:
 	;sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
 	rjmp	StartupModeZCFilter
-
 
 	
 /*==========Interrupt Handlers==========*/
@@ -520,7 +537,7 @@ SPI_STC_vect:
 
 
 
-	//sbr		FLAGS, (1 << ARMED) ; Any input via SPI arms ESC (for now)
+	sbr		FLAGS, (1 << ARMED) ; Any input via SPI arms ESC (for now)
 
 
 
