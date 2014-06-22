@@ -64,7 +64,7 @@ Initialise:
 	clr		ZH
 	ldi		ZL, pm_lo8(Phase1)
 
-	;sbr		FLAGS, (1 << ARMED) // Starting off armed (debug)
+	sbr		FLAGS, (1 << ARMED) // Starting off armed (debug)
 
 	sei
 	ret
@@ -256,6 +256,7 @@ StartupModeZCFilter:
 	;clr		SAMPLE_CNT
 	sbrs	FLAGS, COMPARATOR_STATE
 	rjmp	StartupModeComparatorStateLow
+/*
 StartupModeComparatorStateHigh:
 	cpi		SAMPLE_SUM, 1
 
@@ -284,6 +285,41 @@ StartupModeComparatorStateLow:
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
+*/
+
+
+
+StartupModeComparatorStateHigh:
+	cpi		SAMPLE_SUM, 8
+
+	brsh	ZCFilterEnd
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
+	cbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+StartupModeComparatorStateLow:
+	cpi		SAMPLE_SUM, 60
+
+	brlo	ZCFilterEnd 
+	;lds		TCNT0_TMP, TCNT0
+	
+	
+	;lds		TCNT1H_TMP, TCNT1H
+	;lds		TCNT1L_TMP, TCNT1L
+
+	
+	sbr		FLAGS, (1 << COMPARATOR_STATE)
+	clr		SAMPLE_SUM
+	rjmp	ZCEvent
+
+
+
 //Running Mode
 RunningModeZCFilter:
 	;clr		SAMPLE_CNT
@@ -329,8 +365,16 @@ RunningMode:
 	sbrs	FLAGS, RUNNING_MODE
 	rjmp	StartupMode
 
+
+
+
+	/*
 	sbrc	CYCLE_CNT, 7 ; 128
 	rjmp	Disarm ; N cycles without control input, timeout
+	*/
+
+
+
 
 	/*
 	sts		TCNT0, ZERO
@@ -476,8 +520,12 @@ ComparatorSampleHigh:
 	inc		SAMPLE_SUM
 ComparatorSampleLow:
 	inc		SAMPLE_CNT
+
+
 	sbrs	FLAGS, RUNNING_MODE
 	rjmp	StartupModeSensitivity
+
+
 RunningModeSensitivity:
 	;sbrs	SAMPLE_CNT, 4 ; 16
 	;sbrs	SAMPLE_CNT, 5 ; 32
@@ -485,10 +533,19 @@ RunningModeSensitivity:
 	sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
 	rjmp	RunningModeZCFilter
+/*
 StartupModeSensitivity:
 	;sbrs	SAMPLE_CNT, 4 ; 16
 	sbrs	SAMPLE_CNT, 5 ; 32 (use if full power start with 1,32)
 	;sbrs	SAMPLE_CNT, 6 ; 64
+	;sbrs	SAMPLE_CNT, 7 ; 128
+	rjmp	Loop
+	rjmp	StartupModeZCFilter
+*/
+StartupModeSensitivity:
+	;sbrs	SAMPLE_CNT, 4 ; 16
+	;sbrs	SAMPLE_CNT, 5 ; 32 (use if full power start with 1,32)
+	sbrs	SAMPLE_CNT, 6 ; 64
 	;sbrs	SAMPLE_CNT, 7 ; 128
 	rjmp	Loop
 	rjmp	StartupModeZCFilter
