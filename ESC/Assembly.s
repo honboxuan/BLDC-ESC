@@ -310,7 +310,7 @@ StartupModeComparatorStateLow:
 
 
 StartupModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 4
+	cpi		SAMPLE_SUM, 1
 
 	brsh	ZCFilterEnd
 	;lds		TCNT0_TMP, TCNT0
@@ -324,7 +324,7 @@ StartupModeComparatorStateHigh:
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
 StartupModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 62
+	cpi		SAMPLE_SUM, 63
 
 	brlo	ZCFilterEnd 
 	;lds		TCNT0_TMP, TCNT0
@@ -346,7 +346,7 @@ RunningModeZCFilter:
 	sbrs	FLAGS, COMPARATOR_STATE
 	rjmp	RunningModeComparatorStateLow
 RunningModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 4
+	cpi		SAMPLE_SUM, 8
 	brsh	ZCFilterEnd
 	;lds		TCNT0_TMP, TCNT0
 	
@@ -468,7 +468,7 @@ StartupMode:
 	;inc		COMM_CNT ; Shifted to actual commutation routine
 	;sbrs	COMM_CNT, 4 ; 16
 
-;	sbrs	COMM_CNT, 5 ; 32
+	sbrs	COMM_CNT, 5 ; 32
 	
 	;sbrs	COMM_CNT, 6 ; 64
 	rjmp	Commutate
@@ -562,12 +562,12 @@ ComparatorSampleLow:
 	; Nothing to do!
 	
 	
-	
+	/*
 	inc		SAMPLE_CNT
 	sbrs	SAMPLE_CNT, 3
 	rjmp	Loop
 	clr		SAMPLE_CNT
-
+	*/
 
 
 	sbrs	FLAGS, RUNNING_MODE
