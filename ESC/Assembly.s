@@ -21,8 +21,6 @@
 #define	TCNT1H_TMP		r7
 #define	TCNT1L_TMP		r8
 
-
-
 #define SREG_TEMP			r16
 #define ISR_RMP				r17
 #define	RMP					r18
@@ -33,6 +31,17 @@
 #define	DUTY_L				r23
 #define	COMP_DUTY_H			r24
 #define	COMP_DUTY_L			r25
+
+
+//Moving frame
+#define FRAME_00		r6
+#define FRAME_01		r9
+#define FRAME_02		r10
+#define FRAME_03		r11
+#define FRAME_04		r12
+#define FRAME_05		r13
+#define FRAME_06		r14
+#define FRAME_07		r15
 
 
 .global Initialise
@@ -71,6 +80,7 @@ Initialise:
 
 /*----------Disarm----------*/
 Disarm:
+/*
 	cli
 
 	out		_SFR_IO_ADDR(HIGH_PORT), ZERO
@@ -94,7 +104,7 @@ Disarm:
 	cbr		FLAGS, (1 << ARMED)
 
 	sei
-
+*/
 	rjmp	Loop
 
 /*----------Commutate----------*/
@@ -135,6 +145,16 @@ Commutate:
 	//In fact, no need for sampling if waiting for commutation (running mode)
 	;clr		SAMPLE_CNT
 	;clr		SAMPLE_SUM
+	ldi		RMP, 170
+	mov		FRAME_00, RMP
+	mov		FRAME_01, RMP
+	mov		FRAME_02, RMP
+	mov		FRAME_03, RMP
+	mov		FRAME_04, RMP
+	mov		FRAME_05, RMP
+	mov		FRAME_06, RMP
+	mov		FRAME_07, RMP
+	ldi		SAMPLE_SUM, 32
 
 	ijmp
 Phase1: ; B,A
@@ -290,7 +310,7 @@ StartupModeComparatorStateLow:
 
 
 StartupModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 8
+	cpi		SAMPLE_SUM, 4
 
 	brsh	ZCFilterEnd
 	;lds		TCNT0_TMP, TCNT0
@@ -304,7 +324,7 @@ StartupModeComparatorStateHigh:
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
 StartupModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 60
+	cpi		SAMPLE_SUM, 62
 
 	brlo	ZCFilterEnd 
 	;lds		TCNT0_TMP, TCNT0
@@ -315,7 +335,7 @@ StartupModeComparatorStateLow:
 
 	
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
+	;clr		SAMPLE_SUM
 	rjmp	ZCEvent
 
 
@@ -326,7 +346,7 @@ RunningModeZCFilter:
 	sbrs	FLAGS, COMPARATOR_STATE
 	rjmp	RunningModeComparatorStateLow
 RunningModeComparatorStateHigh:
-	cpi		SAMPLE_SUM, 16
+	cpi		SAMPLE_SUM, 4
 	brsh	ZCFilterEnd
 	;lds		TCNT0_TMP, TCNT0
 	
@@ -339,7 +359,7 @@ RunningModeComparatorStateHigh:
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
 RunningModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 125
+	cpi		SAMPLE_SUM, 60
 	brlo	ZCFilterEnd 
 	;lds		TCNT0_TMP, TCNT0
 	
@@ -349,18 +369,20 @@ RunningModeComparatorStateLow:
 
 	
 	sbr		FLAGS, (1 << COMPARATOR_STATE)
-	clr		SAMPLE_SUM
+	;clr		SAMPLE_SUM
 	rjmp	ZCEvent
 //End of ZC Filter
 ZCFilterEnd:
-	clr		SAMPLE_SUM
-	clr		SAMPLE_CNT
+	;clr		SAMPLE_SUM
+	;clr		SAMPLE_CNT
+	;ldi		SAMPLE_SUM, 32 ; Rolling!!
 	rjmp	Loop
 
 /*----------ZC Event----------*/
 ZCEvent:
-	clr		SAMPLE_SUM
-	clr		SAMPLE_CNT
+	;clr		SAMPLE_SUM
+	;ldi		SAMPLE_SUM, 32
+	;clr		SAMPLE_CNT
 RunningMode:
 	sbrs	FLAGS, RUNNING_MODE
 	rjmp	StartupMode
@@ -446,7 +468,7 @@ StartupMode:
 	;inc		COMM_CNT ; Shifted to actual commutation routine
 	;sbrs	COMM_CNT, 4 ; 16
 
-	sbrs	COMM_CNT, 5 ; 32
+;	sbrs	COMM_CNT, 5 ; 32
 	
 	;sbrs	COMM_CNT, 6 ; 64
 	rjmp	Commutate
@@ -513,17 +535,47 @@ ComparatorSampler:
 	sbrc	FLAGS, COMMUTATE_FLAG
 	rjmp	Loop
 
+
+	
+	sbrc	FRAME_07, 7
+	dec		SAMPLE_SUM
+	lsl		FRAME_00
+	rol		FRAME_01
+	rol		FRAME_02
+	rol		FRAME_03
+	rol		FRAME_04
+	rol		FRAME_05
+	rol		FRAME_06
+	rol		FRAME_07
+
+
+
+
+
 	lds		RMP, ACSR
 	and		RMP, COMPARATOR_MASK
 	breq	ComparatorSampleLow
 ComparatorSampleHigh:
+	inc		FRAME_00
 	inc		SAMPLE_SUM
 ComparatorSampleLow:
+	; Nothing to do!
+	
+	
+	
 	inc		SAMPLE_CNT
+	sbrs	SAMPLE_CNT, 3
+	rjmp	Loop
+	clr		SAMPLE_CNT
+
 
 
 	sbrs	FLAGS, RUNNING_MODE
-	rjmp	StartupModeSensitivity
+	;rjmp	StartupModeSensitivity
+	rjmp	StartupModeZCFilter
+	rjmp	RunningModeZCFilter
+
+	; Stuff underneath here wouldn't even run
 
 
 RunningModeSensitivity:
