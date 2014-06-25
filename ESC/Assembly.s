@@ -359,7 +359,7 @@ RunningModeComparatorStateHigh:
 	clr		SAMPLE_SUM
 	rjmp	ZCEvent
 RunningModeComparatorStateLow:
-	cpi		SAMPLE_SUM, 60
+	cpi		SAMPLE_SUM, 62
 	brlo	ZCFilterEnd 
 	;lds		TCNT0_TMP, TCNT0
 	
