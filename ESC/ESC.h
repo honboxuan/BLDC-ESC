@@ -35,7 +35,7 @@ Speed report via SPI/I2C
 #define	HIGH_DDR	DDRC
 #define HIGH_PORT	PORTC
 
-#define LOW_A	PCTL0 //PSCOUT00 => PD0
+#define LOW_A	PCTL0 //PSCOUT00 => PD0/PB7
 #define LOW_B	PCTL1 //PSCOUT10 => PC0
 #define LOW_C	PCTL2 //PSCOUT20 => PB0
 
