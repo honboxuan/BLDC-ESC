@@ -89,9 +89,9 @@ int main(void) {
 	PSOC0 |= (1 << POEN0A); //PSC0OUTA enable
 	OCR0SA = 0; //Deadtime
 	OCR0RB = TOP;
-	PCNF0 = (1 << POP0)|(1 << PCLKSEL0);
+	PCNF0 = (1 << POP0)|(1 << PCLKSEL0); //Use CLK PLL
 	*/
-	//PCNF0 = (1 << POP0);
+	//PCNF0 = (1 << POP0); //Use CLK IO
 	
 	
 	
@@ -105,8 +105,8 @@ int main(void) {
 	OCR0RA = 0; //Deadtime
 	//OCR0SB = 0; //Controls duty cycle (TOP-desired)
 	OCR0RB = TOP;
-	PCNF0 = (1 << POP0)|(1 << PCLKSEL0);
-	//PCNF0 = (1 << POP0);
+	PCNF0 = (1 << POP0)|(1 << PCLKSEL0); //Use CLK PLL
+	//PCNF0 = (1 << POP0); //Use CLK IO
 	
 	
 	
@@ -120,16 +120,16 @@ int main(void) {
 	PSOC1 |= (1 << POEN1A); //PSC1OUTA enable
 	OCR1SA = 0; //Deadtime
 	OCR1RB = TOP;
-	PCNF1 = (1 << POP1)|(1 << PCLKSEL1);
-	//PCNF1 = (1 << POP1);
+	PCNF1 = (1 << POP1)|(1 << PCLKSEL1); //Use CLK PLL
+	//PCNF1 = (1 << POP1); //Use CLK IO
 	
 	//Power Stage Controller 2
 	DDRB |= (1 << PB0);
 	PSOC2 |= (1 << POEN2A); //PSC2OUTA enable
 	OCR2SA = 0; //Deadtime
 	OCR2RB = TOP;
-	PCNF2 = (1 << POP2)|(1 << PCLKSEL2);
-	//PCNF2 = (1 << POP2);
+	PCNF2 = (1 << POP2)|(1 << PCLKSEL2); //Use CLK PLL
+	//PCNF2 = (1 << POP2); //Use CLK IO
 	
 	//Comparators
 	DDRC &= ~(1 << PC6);
